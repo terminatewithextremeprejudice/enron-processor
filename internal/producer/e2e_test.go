@@ -38,12 +38,20 @@ func TestE2EIngestWalk(t *testing.T) {
 		ListenAddr:  "127.0.0.1:39217",
 		DataDir:     dataDir,
 		DatasetName: datasetNameCanonical,
+		// The e2e exercises the fetch → walk → emit state machine, not a
+		// broker: the dummy sink accepts every envelope (so emitted == total)
+		// with no Kafka required. Kafka-sink coverage is the integration test's
+		// job (parsers + broker).
+		Sink: SinkDummy,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := New(cfg, log)
+	srv, err := New(cfg, log)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Run(ctx) }()
 	defer func() {
@@ -123,7 +131,7 @@ func TestE2EIngestWalk(t *testing.T) {
 				t.Fatalf("walk finished with only %d files, want >= %d", st.GetTotalMails(), minTotal)
 			}
 			if st.GetEmitted() != st.GetTotalMails() {
-				t.Fatalf("emitted=%d != total=%d (stub sink must not drop envelopes)", st.GetEmitted(), st.GetTotalMails())
+				t.Fatalf("emitted=%d != total=%d (sink must not drop envelopes)", st.GetEmitted(), st.GetTotalMails())
 			}
 			if st.GetWalkFinishedAtMs() <= st.GetWalkStartedAtMs() {
 				t.Fatalf("finishedAt %d not after startedAt %d", st.GetWalkFinishedAtMs(), st.GetWalkStartedAtMs())
