@@ -17,12 +17,17 @@ import (
 //
 // Ingestion revision: Start kicks off the real dataset pipeline — ensure
 // the tree is present (download + extract on first runs), walk it, emit
-// one RawEnvelope per mail file. The emit leg itself is still stubbed
-// (see emit.go) until the sarama producer lands.
+// one RawEnvelope per mail file. Envelopes are carried to cfg.RawTopic over
+// the configured Sink (emit.go): a sarama sync producer for the production
+// leg, or a dummy acceptance sink when config.Sink is "dummy".
 type Server struct {
 	enronv1.UnimplementedProducerServer
 	cfg Config
 	log *slog.Logger
+
+	// sink is the envelope destination (sarama or dummy); built by New from
+	// cfg.Sink and closed by Close.
+	sink Sink
 
 	// Walk lifecycle. Token pattern: every Start bumps walkToken, and a
 	// walk may only apply its final state while it is still the newest
