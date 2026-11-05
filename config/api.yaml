@@ -1,0 +1,11 @@
+# api — HTTP control + metrics surface.
+#   POST /start        trigger (re)ingestion of the dataset
+#   GET  /status       finished? + total messages processed
+#   GET  /top-senders  top 10 senders by message count
+listen_addr: :8080
+
+bootstrap_servers:
+  - kafka:9092
+db_dsn: postgres://enron:enron@postgres:5432/enron?sslmode=disable
+
+top_n: 10
