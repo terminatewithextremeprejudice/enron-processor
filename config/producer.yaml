@@ -1,0 +1,29 @@
+# producer — walks the raw Enron maildir and emits RawEnvelope protos onto
+# Kafka (topic `enron.raw`). Deliberately dumb: byte ferry + idempotency
+# key only. All parsing is the parser's job.
+#
+# Ingestion revision: the dataset fetch + maildir walk are live (the
+# service downloads + unpacks the dataset into data_dir on first runs).
+# The emit sink is still a stub until the sarama producer lands; the
+# bootstrap/topology fields below are its reserved configuration.
+
+# ---- control plane (consumed by the api service) --------------------------
+listen_addr: ":9000"
+
+# ---- ingestion ----------------------------------------------------------------
+# Where the dataset is fetched to / unpacked from (tree = data_dir/dataset_name).
+data_dir: /data
+dataset_name: enron_mail_20150507
+
+# ---- Kafka emission (reserved; stub sink for now) -----------------------------
+bootstrap_servers:
+  - kafka:9092
+raw_topic: enron.raw
+dlq_topic: enron.raw.dlq
+
+acks: all
+retries: 3
+# 10 MiB — Enron mails with embedded payloads can be large.
+max_message_bytes: 10485760
+batch_size: 131072
+flush_ms: 5
