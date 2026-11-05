@@ -222,8 +222,19 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// Close cancels the service context (bounds any in-flight walk).
+// Close cancels the service context (bounding any in-flight walk) and closes
+// the emit sink. Safe to call more than once.
 func (s *Server) Close() {
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		return
+	}
+	s.closing = true
+	if err := s.sink.Close(); err != nil {
+		s.log.Warn("close emit sink", "err", err)
+	}
+	s.mu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
 	}
