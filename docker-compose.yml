@@ -1,0 +1,152 @@
+# Enron mail processor — local runnable stack.
+#
+#   docker compose up -d                  # infra only (Kafka 4.0 KRaft + Postgres 16)
+#   docker compose --profile app up -d    # full microservice stack (builds the Go services)
+#
+# Kafka listener topology (single node):
+#   PLAINTEXT  -> kafka:9092       in-network clients (producer / parser / worker containers)
+#   EXTERNAL   -> localhost:9093   host-side clients (your laptop, dev tooling)
+#   CONTROLLER -> 1@kafka:9094     KRaft quorum (internal only)
+#
+# Postgres: localhost:5432, user=enron pass=enron db=enron.
+# Migrations in db/migrations/*.up.sql are applied automatically on first
+# volume initialisation by db/initdb/01_apply_migrations.sh.
+
+x-go-service: &go-service
+  restart: unless-stopped
+  init: true
+  environment:
+    KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+    KAFKA_BOOTSTRAP_SERVERS_EXTERNAL: ${KAFKA_BOOTSTRAP_SERVERS_EXTERNAL:-localhost:9093}
+    DB_DSN: ${DB_DSN:-postgres://enron:enron@postgres:5432/enron?sslmode=disable}
+    RAW_TOPIC: ${RAW_TOPIC:-enron.raw}
+    DLQ_TOPIC: ${DLQ_TOPIC:-enron.raw.dlq}
+    WORKER_GRPC_ADDR: ${WORKER_GRPC_ADDR:-worker:50051}
+    APP_CONFIG: /etc/enron/config.yaml
+  depends_on:
+    kafka:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  networks: [enron-net]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: enron
+      POSTGRES_USER: enron
+      POSTGRES_PASSWORD: enron
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Official image runs /docker-entrypoint-initdb.d on a fresh volume.
+      # Our script applies db/migrations/*.up.sql in lexicographic order.
+      - ./db/initdb/01_apply_migrations.sh:/docker-entrypoint-initdb.d/01_apply_migrations.sh:ro
+      - ./db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enron -d enron"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks: [enron-net]
+
+  kafka:
+    image: apache/kafka:4.0.0
+    restart: unless-stopped
+    ports:
+      - "9093:9093" # EXTERNAL listener, host-side bootstrap: localhost:9093
+    environment:
+      # ---- KRaft single node (ZooKeeper does not exist in Kafka 4.x) ----
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      CLUSTER_ID: "MkU3OEVBNTgwNTJENDA3OA=="
+      # ---- listener wiring ----
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093,CONTROLLER://0.0.0.0:9094"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:9093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9094"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      # ---- single-broker replication defaults (local run) ----
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+    networks: [enron-net]
+
+  # ---- Go microservices (profile: app) -----------------------------------
+  # The cmd/<service> packages are filled in next; until then `--profile app`
+  # will fail at the build stage by design (nothing to build yet).
+
+  producer:
+    <<: *go-service
+    image: enron-processor/producer
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: producer
+    volumes:
+      - dataset:/data
+      - ./config/producer.yaml:/etc/enron/config.yaml:ro
+
+  parser:
+    <<: *go-service
+    image: enron-processor/parser
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: parser
+    volumes:
+      - ./config/parser.yaml:/etc/enron/config.yaml:ro
+
+  worker:
+    <<: *go-service
+    image: enron-processor/worker
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: worker
+    volumes:
+      - ./config/worker.yaml:/etc/enron/config.yaml:ro
+
+  api:
+    <<: *go-service
+    image: enron-processor/api
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: api
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - ./config/api.yaml:/etc/enron/config.yaml:ro
+
+volumes:
+  pgdata:
+  kafka-data:
+  dataset:
+
+networks:
+  enron-net:
+    driver: bridge
