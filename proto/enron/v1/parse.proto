@@ -1,0 +1,71 @@
+// Parser -> Database worker contract (second worker leg, no Kafka involved).
+syntax = "proto3";
+
+package enron.v1;
+
+option go_package = "github.com/terminatewithextremeprejudice/enron-processor/gen/enron/v1;enronv1";
+
+// DbWorker is implemented by the `worker` service (Postgres sink).
+// The `parser` service calls WriteMessage synchronously and only commits the
+// Kafka offset after a successful ack — at-least-once delivery, made
+// effectively-once by the idempotency key in the database.
+service DbWorker {
+  // Write one parsed message + its recipients. Idempotent in idempotency_key.
+  rpc WriteMessage (ParsedMessage) returns (WriteResult);
+
+  // Liveness/readiness probe.
+  rpc Health (HealthCheck) returns (HealthStatus);
+}
+
+// ParsedMessage is the normalized result of parsing one raw Enron mail file.
+message ParsedMessage {
+  // Carried over verbatim from RawEnvelope — the dedupe key end to end.
+  string idempotency_key = 1;
+
+  string source_path = 2;
+
+  // Message-ID header value; empty when the mail has none.
+  string message_id = 3;
+
+  string sender_name = 4;
+  string sender_email = 5;
+
+  repeated Recipient to = 6;
+  repeated Recipient cc = 7;
+  repeated Recipient bcc = 8;
+  repeated string reply_to = 9;
+
+  string subject = 10;
+  string body_text = 11;
+  string body_html = 12;
+
+  // Unix seconds; 0 when the header is absent or unparseable.
+  int64 sent_at_unix = 13;
+  int64 received_at_unix = 14;
+}
+
+message Recipient {
+  string name = 1;
+  string email = 2;
+}
+
+message WriteResult {
+  string idempotency_key = 1;
+
+  // true when this key had already been committed by an earlier attempt.
+  bool duplicate = 2;
+
+  int32 recipients_written = 3;
+  int64 message_row_id = 4;
+  // 1 = person row created, 0 = person already existed.
+  int32 person_created = 5;
+}
+
+message HealthCheck {
+  string service = 1;
+}
+
+message HealthStatus {
+  bool ok = 1;
+  string detail = 2;
+}

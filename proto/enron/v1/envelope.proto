@@ -1,0 +1,51 @@
+// Kafka transport contracts for the Enron mail processor.
+//
+//   enron.raw     -> RawEnvelope   (producer -> parser)
+//   enron.raw.dlq -> DeadLetter    (any component -> dead-letter topic)
+syntax = "proto3";
+
+package enron.v1;
+
+option go_package = "github.com/terminatewithextremeprejudice/enron-processor/gen/enron/v1;enronv1";
+
+// RawEnvelope is the unit crossing the `enron.raw` topic.
+// It carries the untouched mail-file bytes so ALL parsing responsibility
+// lives in the parser component — the producer is a dumb, safe ferry.
+message RawEnvelope {
+  // Idempotency key for the whole pipeline: sha256(dataset-relative path),
+  // hex-encoded. Deterministic across producer restarts, re-runs and DLQ
+  // replays — it is THE dedupe id the database keys on.
+  string idempotency_key = 1;
+
+  // Human-readable dataset-relative path, e.g. "kean_j/123".
+  string source_path = 2;
+
+  // Full raw bytes of the mail file, unmodified.
+  bytes raw_bytes = 3;
+
+  // Producer process id that emitted this envelope (DLQ forensics).
+  string producer_id = 4;
+
+  // Unix millis when the envelope was produced.
+  int64 produced_at_ms = 5;
+}
+
+// DeadLetter wraps a failed envelope on `enron.raw.dlq`.
+// Keeping the original envelope inside makes the DLQ self-sufficient:
+// a replay tool can re-emit RawEnvelope without touching any other system.
+message DeadLetter {
+  string idempotency_key = 1;
+
+  // Where it failed and when.
+  string failed_topic = 2;
+  int32 failed_partition = 3;
+  int64 failed_offset = 4;
+  string consumer_group = 5;
+  // "producer" | "parser" | "worker"
+  string failed_component = 6;
+  string error = 7;
+  int64 failed_at_ms = 8;
+
+  // The envelope that failed (raw or partially parsed state).
+  RawEnvelope original = 9;
+}
