@@ -7,10 +7,11 @@
 //	gRPC enron.v1.Producer.Start   "ensure a walk is running"  (from api POST /start)
 //	gRPC enron.v1.Producer.Status  state + walk progress       (from api GET /status)
 //
-// STATUS: INGESTION REVISION. The dataset fetch (dataset.go), the maildir
-// walk (walk.go), and the state machine (server.go) are real; the emit
-// sink is still a stub (emit.go) until the sarama leg onto enron.raw
-// lands.
+// STATUS: KAFKA LEG LANDED. The dataset fetch (dataset.go), the maildir
+// walk (walk.go), and the state machine (server.go) are real, and the emit
+// sink (emit.go) now carries each envelope to cfg.RawTopic over a sarama
+// sync producer (config.Sink == "kafka") — or, with config.Sink == "dummy",
+// drops it so the pipeline still runs broker-less (dry runs, e2e).
 package producer
 
 import (
@@ -101,6 +102,24 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.DatasetName == "" {
 		cfg.DatasetName = datasetNameCanonical
+	}
+	// The sink defaults to Kafka (the production leg) so an operator who
+	// wants the broker does not have to spell it out. A misspelled value is
+	// a deploy mistake and is refused at load rather than swallowed.
+	if cfg.Sink == "" {
+		cfg.Sink = SinkKafka
+	}
+	if cfg.Sink != SinkKafka && cfg.Sink != SinkDummy {
+		return Config{}, fmt.Errorf("config %q: sink %q is not %q or %q", path, cfg.Sink, SinkKafka, SinkDummy)
+	}
+	if cfg.RawTopic == "" {
+		cfg.RawTopic = defaultRawTopic
+	}
+	if cfg.DLQTopic == "" {
+		cfg.DLQTopic = defaultDLQTopic
+	}
+	if cfg.Acks == "" {
+		cfg.Acks = "all"
 	}
 	return cfg, nil
 }
