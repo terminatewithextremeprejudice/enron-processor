@@ -48,19 +48,27 @@ type Server struct {
 	dlq        int64 // always 0 in this revision: no DLQ routing yet
 
 	// Shutdown plumbing (set by Run).
-	ctx    context.Context
-	cancel context.CancelFunc
-	srv    *grpc.Server
+	ctx      context.Context
+	cancel   context.CancelFunc
+	srv      *grpc.Server
+	closing  bool // guards sink.Close in Close so it runs exactly once
 }
 
-// New wires the control surface. The state starts at UNSPECIFIED
-// ("no walk has been requested yet"), which is startable.
-func New(cfg Config, log *slog.Logger) *Server {
+// New wires the control surface and the emit sink. It builds the sink from
+// cfg.Sink: a sarama sync producer for the kafka leg (which dials the broker
+// and can fail) or a dummy sink (which never does). The state starts at
+// UNSPECIFIED ("no walk has been requested yet"), which is startable.
+func New(cfg Config, log *slog.Logger) (*Server, error) {
+	sink, err := newSink(cfg, log)
+	if err != nil {
+		return nil, fmt.Errorf("build emit sink: %w", err)
+	}
 	return &Server{
 		cfg:   cfg,
 		log:   log,
+		sink:  sink,
 		state: enronv1.ProducerState_PRODUCER_STATE_UNSPECIFIED,
-	}
+	}, nil
 }
 
 // Start implements enron.v1.Producer.Start.
