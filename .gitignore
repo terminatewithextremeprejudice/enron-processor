@@ -1,0 +1,21 @@
+# Build artifacts
+bin/
+out/
+*.exe
+
+# The Enron dataset lives on the host (./data) and is mounted into containers. Never commit it.
+data/
+*.tar.gz
+
+# Local env (docker compose reads .env automatically)
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# NOTE: gen/ is intentionally committed (hand-reproducible Go protobuf code;
+# the Docker build's "protoc" stage and `make proto` regenerate it from proto/).

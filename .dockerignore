@@ -1,0 +1,10 @@
+.git
+.idea
+.vscode
+data/
+bin/
+out/
+.env
+.env.*
+*.md
+!README.md
