@@ -116,7 +116,7 @@ func newKafkaSink(cfg Config, log *slog.Logger) (*kafkaSink, error) {
 
 	sc := sarama.NewConfig()
 	sc.ClientID = "enron-producer"
-	sc.Producer.RequiredAcknowledgments = acksFor(cfg.Acks)
+	sc.Producer.RequiredAcks = acksFor(cfg.Acks)
 	sc.Producer.Retry.Max = cfg.Retries
 	if cfg.MaxMessageBytes > 0 {
 		sc.Producer.MaxMessageBytes = cfg.MaxMessageBytes
@@ -147,10 +147,10 @@ func (k *kafkaSink) Send(ctx context.Context, env *enronv1.RawEnvelope) error {
 	}
 	msg := &sarama.ProducerMessage{
 		Topic: k.topic,
-		Key:   sarama.StringKey(env.IdempotencyKey),
+		Key:   sarama.StringEncoder(env.IdempotencyKey),
 		Value: sarama.ByteEncoder(body),
 	}
-	partition, offset, err := k.sp.Send(msg)
+	partition, offset, err := k.sp.SendMessage(msg)
 	if err != nil {
 		return fmt.Errorf("send %q: %w", env.SourcePath, err)
 	}
@@ -167,7 +167,7 @@ func (k *kafkaSink) Close() error { return k.sp.Close() }
 // "all" (the committed default) waits for every ISR replica; "leader" waits
 // only for the partition leader; anything unrecognized falls back to the
 // safest level rather than the lossiest one.
-func acksFor(acks string) sarama.RequiredAcknowledgments {
+func acksFor(acks string) sarama.RequiredAcks {
 	switch acks {
 	case "", "all":
 		return sarama.WaitForAll
