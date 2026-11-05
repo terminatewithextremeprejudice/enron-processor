@@ -29,6 +29,24 @@ const (
 	defaultDataDir = "data"
 )
 
+// Sink selects the envelope destination. These are the accepted values of
+// Config.Sink (see newSink in emit.go).
+const (
+	// SinkKafka writes raw envelopes to cfg.RawTopic over sarama.
+	SinkKafka = "kafka"
+	// SinkDummy accepts and discards envelopes; the pipeline runs without a
+	// broker (dry runs, e2e).
+	SinkDummy = "dummy"
+)
+
+// defaultRawTopic / defaultDLQTopic mirror the README's topic contract
+// ("enron.raw" is the raw envelope channel, "enron.raw.dlq" the dead-letter
+// channel) so a minimal config need not restate them.
+const (
+	defaultRawTopic = "enron.raw"
+	defaultDLQTopic = "enron.raw.dlq"
+)
+
 // Config is the runtime configuration of the producer service
 // (config/producer.yaml).
 type Config struct {

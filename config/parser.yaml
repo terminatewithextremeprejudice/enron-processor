@@ -1,0 +1,15 @@
+# parser — Kafka consumer of `enron.raw`. Parses raw RFC-822 mail into
+# ParsedMessage protos and hands them to the db worker over gRPC.
+# Kafka offsets are committed only after the worker acks. Failures land on
+# `enron.raw.dlq` wrapped in a DeadLetter.
+bootstrap_servers:
+  - kafka:9092
+raw_topic: enron.raw
+dlq_topic: enron.raw.dlq
+
+consumer_group: parser
+max_poll_records: 200
+
+# gRPC target of the second worker (this leg has NO Kafka by design).
+worker_grpc_addr: worker:50051
+worker_rpc_timeout_ms: 5000
