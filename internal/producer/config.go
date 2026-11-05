@@ -60,7 +60,12 @@ type Config struct {
 	// DatasetName is the unpacked tree's directory name.
 	DatasetName string `yaml:"dataset_name"`
 
-	// ---- Kafka emission (reserved; the emit sink is stubbed for now) -----
+	// ---- Kafka emission (see emit.go: the sarama sink behind Server.sink) -
+	// Sink selects the envelope destination: SinkKafka (sarama → RawTopic) or
+	// SinkDummy (accept-and-discard, for dry runs and the e2e test).
+	Sink string `yaml:"sink"`
+	// BootstrapServers is the Kafka contact point list for the raw leg
+	// (e.g. ["kafka:9092"] in-network, ["localhost:9093"] host-side).
 	BootstrapServers []string `yaml:"bootstrap_servers"`
 	RawTopic         string   `yaml:"raw_topic"`
 	DLQTopic         string   `yaml:"dlq_topic"`
