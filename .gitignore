@@ -17,5 +17,9 @@ data/
 .idea/
 .vscode/
 
+cmd/api/api
+cmd/producer/producer
+cmd/worker/worker
+
 # NOTE: gen/ is intentionally committed (hand-reproducible Go protobuf code;
 # the Docker build's "protoc" stage and `make proto` regenerate it from proto/).
