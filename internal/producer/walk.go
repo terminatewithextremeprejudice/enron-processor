@@ -86,53 +86,53 @@ func Walk(ctx context.Context, cfg Config, root string, emit EmitFunc, pid strin
 			return err // shut down cleanly on cancellation
 		}
 
-		// A discovered file is a discovered file: counted up front so
-		// progress reflects discovery even while one file is still being
-		// read or emitted.
+		// A regular file is discovered. Count it once.
 		total.Add(1)
 
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
+			total.Add(-1) // undo the count for this file
 			failed.Add(1)
 			log.Error("relativize path", "path", path, "err", relErr)
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
 
-			// Open the file and limit read to config's MaxEnvelopeBytes
-			f, err := os.Open(path)
-			if err != nil {
-				failed.Add(1)
-				log.Error("read mail file", "path", relSlash, "err", err)
-				return nil
-			}
-			// Use LimitReader to cap the read at MaxEnvelopeBytes
-			var limited io.Reader = io.LimitReader(f, cfg.MaxEnvelopeBytes)
-			// Read at least header bytes if file is smaller, or exactly the limit
-			raw, readErr := io.ReadAll(limited)
-			f.Close()
-			if readErr != nil {
-				failed.Add(1)
-				log.Error("read mail file", "path", relSlash, "err", readErr)
-				return nil
-			}
+		// Open the file and limit read to config's MaxEnvelopeBytes
+		f, err := os.Open(path)
+		if err != nil {
+			total.Add(-1) // undo the count for this file
+			failed.Add(1)
+			log.Error("read mail file", "path", relSlash, "err", err)
+			return nil
+		}
+		// Use LimitReader to cap the read at MaxEnvelopeBytes
+		var limited io.Reader = io.LimitReader(f, cfg.MaxEnvelopeBytes)
+		// Read at least header bytes if file is smaller, or exactly the limit
+		raw, readErr := io.ReadAll(limited)
+		f.Close()
+		if readErr != nil {
+			total.Add(-1) // undo the count for this file
+			failed.Add(1)
+			log.Error("read mail file", "path", relSlash, "err", readErr)
+			return nil
+		}
 
-			// Skip VCALENDAR format - these are calendar data files, not emails.
-			// Filter them early so they're not counted in total/emitted stats.
-			if bytes.Contains(bytes.ToUpper(raw), []byte("BEGIN:VCALENDAR")) {
-				log.Debug("skipping VCALENDAR file", "path", relSlash)
-				return nil
-			}
+		// Skip VCALENDAR format - these are calendar data files, not emails.
+		// Filter them early so they're not counted in total/emitted stats.
+		if bytes.Contains(bytes.ToUpper(raw), []byte("BEGIN:VCALENDAR")) {
+			total.Add(-1) // undo the count for this file
+			log.Debug("skipping VCALENDAR file", "path", relSlash)
+			return nil
+		}
 
-			total.Add(1)
-
-					if err := emit(ctx, buildEnvelope(cfg, relSlash, raw, pid, time.Now())); err != nil {
-					failed.Add(1)
-					log.Error("emit envelope", "path", relSlash, "err", err)
-					return nil
-				}
-				// Only increment emitted after emit() succeeds (returns nil)
-				emitted.Add(1)
+		if err := emit(ctx, buildEnvelope(cfg, relSlash, raw, pid, time.Now())); err != nil {
+			failed.Add(1)
+			log.Error("emit envelope", "path", relSlash, "err", err)
+			return nil
+		}
+		// Only increment emitted after emit() succeeds (returns nil)
+		emitted.Add(1)
 
 		if n := total.Load(); n%walkProgressEvery == 0 {
 			log.Info("walk progress",
