@@ -1,9 +1,0 @@
-# worker — the second worker. A gRPC service (enron.v1.DbWorker) that writes
-# ParsedMessage protos into PostgreSQL. Idempotent: upserts keyed on
-# idempotency_key, so Kafka redelivery and DLQ replays are harmless.
-db_dsn: postgres://enron:enron@postgres:5432/enron?sslmode=disable
-db_max_open_conn: 10
-db_max_idle_conn: 5
-db_conn_max_lifetime_minutes: 30
-
-grpc_listen_addr: :50051

@@ -123,7 +123,7 @@ type DeadLetter struct {
 	FailedPartition int32  `protobuf:"varint,3,opt,name=failed_partition,json=failedPartition,proto3" json:"failed_partition,omitempty"`
 	FailedOffset    int64  `protobuf:"varint,4,opt,name=failed_offset,json=failedOffset,proto3" json:"failed_offset,omitempty"`
 	ConsumerGroup   string `protobuf:"bytes,5,opt,name=consumer_group,json=consumerGroup,proto3" json:"consumer_group,omitempty"`
-	// "producer" | "parser" | "worker"
+	// "producer" | "parser"
 	FailedComponent string `protobuf:"bytes,6,opt,name=failed_component,json=failedComponent,proto3" json:"failed_component,omitempty"`
 	Error           string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
 	FailedAtMs      int64  `protobuf:"varint,8,opt,name=failed_at_ms,json=failedAtMs,proto3" json:"failed_at_ms,omitempty"`

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	enronv1 "github.com/terminatewithextremeprejudice/enron-processor/gen/enronv1"
+	enronv1 "github.com/terminatewithextremeprejudice/enron-processor/gen/enron/v1"
 )
 
 func mustEnv(raw string) *enronv1.RawEnvelope {

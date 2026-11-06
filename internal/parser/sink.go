@@ -2,8 +2,8 @@ package parser
 
 import (
 	"context"
-	"log/slog"
 	"fmt"
+	"log/slog"
 
 	enronv1 "github.com/terminatewithextremeprejudice/enron-processor/gen/enron/v1"
 )
@@ -13,12 +13,15 @@ import (
 // and is done once the Persister acks (or fails).
 //
 // Persister implementations:
-//   - dummyPersister (this revision): accepts and discards — a stand-in so the
-//     consume → parse → route loop is complete and testable before worker gRPC.
-//   - workerPersister (later): dials enron.v1.DbWorker and calls WriteMessage.
+//   - pgPersister (production): writes the message straight into PostgreSQL
+//     — person + message + message_recipient + envelope_receipt in one
+//     idempotent transaction.
+//   - dummyPersister (dev only): accept-and-discard, so the consume → parse →
+//     route loop can be exercised without a database.
 //
-// The interface is deliberately tiny so the real leg is a body-local swap
-// behind NewPersister — nothing in the consumer, parse, or DLQ code changes.
+// The interface is deliberately tiny: swapping the persistence target is a
+// body-local change behind NewPersister — nothing in the consumer, parse, or
+// DLQ code changes.
 type Persister interface {
 	// Persist durably records one parsed message (idempotent by key).
 	Persist(ctx context.Context, msg *enronv1.ParsedMessage) error
@@ -26,27 +29,28 @@ type Persister interface {
 	Close() error
 }
 
-// NewPersister builds the configured persister. This revision only wires the
-// dummy for the real one later (worker Persister requires the worker service
-// on cfg.WorkerGRPCAddr — intentionally not built yet; see the worker gRPC
-// leg in proto/enron/v1/parse.proto).
+// NewPersister builds the configured persister. Production is "postgres" —
+// the parser writes directly, there is no intermediate worker service. The
+// "dummy" target stays for development without a database.
 func NewPersister(cfg Config, log *slog.Logger) (Persister, error) {
 	switch cfg.Persister {
-	case SinkDummy, "":
-		log.Info("persister=dummy (accepted-and-discarded; worker gRPC leg lands later)")
-
+	case SinkPostgres, "":
+		if cfg.DBDSN == "" {
+			return nil, fmt.Errorf("persister=postgres requires db_dsn (or set DB_DSN)")
+		}
+		return newPostgresPersister(cfg.DBDSN, cfg.RawTopic, log)
+	case SinkDummy:
+		log.Info("persister=dummy (accept-and-discard; no Postgres writes)")
 		return &dummyPersister{log: log}, nil
-	case SinkWorker:
-		return nil, fmt.Errorf("persister=%q is not implemented yet (worker leg is the next revision)", SinkWorker)
 	default:
-		return nil, fmt.Errorf("unknown persister %q (want %q or %q)", cfg.Persister, SinkDummy, SinkWorker)
+		return nil, fmt.Errorf("unknown persister %q (want %q or %q)", cfg.Persister, SinkPostgres, SinkDummy)
 	}
 }
 
-// dummyPersister is the accept-and-discard stand-in for the worker leg. It
-// is intentionally lossless-with-respect-to-the-state-machine: every Persist
-// succeeds, so the consumer's at-least-once contract holds and the loop runs
-// end to end without a database.
+// dummyPersister is the accept-and-discard stand-in for a database-less dev
+// run. It is intentionally lossless-with-respect-to-the-state-machine: every
+// Persist succeeds, so the consumer's at-least-once contract holds and the
+// loop runs end to end without Postgres.
 type dummyPersister struct{ log *slog.Logger }
 
 func (d *dummyPersister) Persist(ctx context.Context, msg *enronv1.ParsedMessage) error {
@@ -56,9 +60,8 @@ func (d *dummyPersister) Persist(ctx context.Context, msg *enronv1.ParsedMessage
 	default:
 	}
 	d.log.Debug("persisted (dummy sink)", "idempotency_key", msg.GetIdempotencyKey(),
- "sender", msg.GetSenderEmail(), "subject", msg.GetSubject())
+		"sender", msg.GetSenderEmail(), "subject", msg.GetSubject())
 	return nil
 }
 
 func (d *dummyPersister) Close() error { return nil }
-

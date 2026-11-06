@@ -17,8 +17,8 @@ type Sender struct {
 }
 
 // Store is the read-only data surface the api needs. The api never writes
-// to Postgres — writes belong to the worker; this is strictly a metrics
-// projection over the schema it shares.
+// to Postgres — writes belong to the parser (the sole writer); this is
+// strictly a metrics projection over the schema it shares.
 type Store interface {
 	// TotalMessages is the count of durably parsed messages
 	// (rows in the message table — the pipeline's effective-once sink).

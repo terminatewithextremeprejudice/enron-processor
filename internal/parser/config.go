@@ -1,15 +1,14 @@
 // Package parser implements the parser service: a Kafka consumer of
-// enron.raw that parses each RawEnvelope's RFC-822 mail into a ParsedMessage.
-// Success is handed to the (currently stubbed) persistence sink — the
-// real sink is the worker's DbWorker.WriteMessage over gRPC, which is the
-// next revision; failures are routed to enron.raw.dlq wrapped in a DeadLetter
-// carrying the original envelope + error (lossless, inspectable, replayable).
+// enron.raw that parses each RawEnvelope's RFC-822 mail into a ParsedMessage
+// and writes it directly into PostgreSQL (person, message, message_recipient,
+// envelope_receipt) in one idempotent transaction. Failures are routed to
+// enron.raw.dlq wrapped in a DeadLetter carrying the original envelope +
+// error (lossless, inspectable, replayable).
 package parser
 
 import (
 	"fmt"
 	"os"
-	"time"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -24,11 +23,10 @@ const (
 	defaultConsumerGroup = "parser"
 )
 
-// Sink selects whether the success path is the (future) worker gRPC leg or the
-// current no-op placeholder.
+// Sink selects where parsed messages land.
 const (
-	SinkWorker = "worker" // TODO(later): dial enron.v1.DbWorker.WriteMessage
-	SinkDummy  = "dummy"  // accept-and-discard (this revision)
+	SinkPostgres = "postgres" // write directly into PostgreSQL (production)
+	SinkDummy    = "dummy"    // accept-and-discard (dev without a database)
 )
 
 // Config is the runtime configuration of the parser service (config/parser.yaml).
@@ -41,13 +39,12 @@ type Config struct {
 	ConsumerGroup    string   `yaml:"consumer_group"`
 	MaxPollRecords   int      `yaml:"max_poll_records"` // advisory (sarama has no exact knob; used for pacing)
 
-	// ---- persistence target (worker leg; stubbed this revision) ------------
-	Persister            string        `yaml:"persister"` // "dummy" | "worker"
-	WorkerGRPCAddr       string        `yaml:"worker_grpc_addr"`
-	WorkerRPCTimeout     time.Duration `yaml:"worker_rpc_timeout_ms"` // note: ms in yaml
-	Acks                 string        `yaml:"acks"` // DLQ producer acks (all|leader)
-	Retries              int           `yaml:"retries"`
-	MaxMessageBytes      int           `yaml:"max_message_bytes"`
+	// ---- persistence target (direct Postgres writes) ------------------------
+	Persister      string `yaml:"persister"` // "postgres" | "dummy"
+	DBDSN          string `yaml:"db_dsn"`    // Postgres DSN (or DB_DSN env)
+	Acks           string `yaml:"acks"`      // DLQ producer acks (all|leader)
+	Retries        int    `yaml:"retries"`
+	MaxMessageBytes int   `yaml:"max_message_bytes"`
 }
 
 func Load(path string) (Config, error) {
@@ -64,12 +61,13 @@ func Load(path string) (Config, error) {
 	if v := os.Getenv("RAW_TOPIC"); v != "" { cfg.RawTopic = v }
 	if v := os.Getenv("DLQ_TOPIC"); v != "" { cfg.DLQTopic = v }
 	if v := os.Getenv("CONSUMER_GROUP"); v != "" { cfg.ConsumerGroup = v }
+	if v := os.Getenv("DB_DSN"); v != "" { cfg.DBDSN = v }
 	// defaults
-	if len(cfg.BootstrapServers) == 0 { return cfg, fmt.Errorf("bootstrap_servers required %d", cfg.BootstrapServers) }
+	if len(cfg.BootstrapServers) == 0 { return cfg, fmt.Errorf("bootstrap_servers required (none configured) %v", cfg.BootstrapServers) }
 	if cfg.RawTopic == "" { cfg.RawTopic = defaultRawTopic }
 	if cfg.DLQTopic == "" { cfg.DLQTopic = defaultDLQTopic }
 	if cfg.ConsumerGroup == "" { cfg.ConsumerGroup = defaultConsumerGroup }
-	if cfg.Persister == "" { cfg.Persister = SinkDummy }
+	if cfg.Persister == "" { cfg.Persister = SinkPostgres }
 	return cfg, nil
 }
 

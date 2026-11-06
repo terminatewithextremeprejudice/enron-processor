@@ -41,7 +41,7 @@ message DeadLetter {
   int32 failed_partition = 3;
   int64 failed_offset = 4;
   string consumer_group = 5;
-  // "producer" | "parser" | "worker"
+  // "producer" | "parser"
   string failed_component = 6;
   string error = 7;
   int64 failed_at_ms = 8;

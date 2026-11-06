@@ -4,7 +4,7 @@
 #   docker compose --profile app up -d    # full microservice stack (builds the Go services)
 #
 # Kafka listener topology (single node):
-#   PLAINTEXT  -> kafka:9092       in-network clients (producer / parser / worker containers)
+#   PLAINTEXT  -> kafka:9092       in-network clients (producer / parser / api containers)
 #   EXTERNAL   -> localhost:9093   host-side clients (your laptop, dev tooling)
 #   CONTROLLER -> 1@kafka:9094     KRaft quorum (internal only)
 #
@@ -21,7 +21,6 @@ x-go-service: &go-service
     DB_DSN: ${DB_DSN:-postgres://enron:enron@postgres:5432/enron?sslmode=disable}
     RAW_TOPIC: ${RAW_TOPIC:-enron.raw}
     DLQ_TOPIC: ${DLQ_TOPIC:-enron.raw.dlq}
-    WORKER_GRPC_ADDR: ${WORKER_GRPC_ADDR:-worker:50051}
     APP_CONFIG: /etc/enron/config.yaml
   depends_on:
     kafka:
@@ -115,18 +114,6 @@ services:
         SERVICE: parser
     volumes:
       - ./config/parser.yaml:/etc/enron/config.yaml:ro
-
-  worker:
-    <<: *go-service
-    image: enron-processor/worker
-    profiles: [app]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        SERVICE: worker
-    volumes:
-      - ./config/worker.yaml:/etc/enron/config.yaml:ro
 
   api:
     <<: *go-service

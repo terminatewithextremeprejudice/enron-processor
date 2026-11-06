@@ -7,7 +7,7 @@ BEGIN;
 -- person — one row per distinct e-mail identity (sender or recipient).
 --
 -- Identity convention: the e-mail address (lower-cased/trimmed at write time
--- by the worker) is the identity; the display name is best-effort metadata
+-- by the parser) is the identity; the display name is best-effort metadata
 -- that may legitimately be '' (Enron mails sometimes only carry an address).
 -- Two humans sharing an address in this dataset are one row — by design.
 -- ============================================================================

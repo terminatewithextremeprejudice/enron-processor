@@ -1,11 +1,10 @@
 # syntax=docker/dockerfile:1
 #
 # One image per microservice binary. The SERVICE build arg selects which
-# package under cmd/ to compile, so all four services share this Dockerfile:
+# package under cmd/ to compile, so all three services share this Dockerfile:
 #
 #   docker build --build-arg SERVICE=producer -t enron-processor/producer .
 #   docker build --build-arg SERVICE=parser   -t enron-processor/parser   .
-#   docker build --build-arg SERVICE=worker   -t enron-processor/worker   .
 #   docker build --build-arg SERVICE=api      -t enron-processor/api      .
 
 ARG GO_VERSION=1.25

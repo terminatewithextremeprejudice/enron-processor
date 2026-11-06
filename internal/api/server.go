@@ -150,7 +150,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.json(w, http.StatusOK, statusResponse{
-		Finished:      reply.GetState() == enronv1.ProducerState_PRODUCER_STATE_FINISHED,
+		Finished:      reply.GetState() == enronv1.ProducerState_PRODUCER_STATE_FINISHED && total == reply.GetEmitted(),
 		TotalMessages: total,
 	})
 }

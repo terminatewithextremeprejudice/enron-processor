@@ -1,21 +1,12 @@
-// Parser -> Database worker contract (second worker leg, no Kafka involved).
+// Parser output contract: the normalized shape of one raw Enron mail file.
+// The parser persists this shape directly into PostgreSQL (person, message,
+// message_recipient) within the same component — there is no intermediate
+// worker service.
 syntax = "proto3";
 
 package enron.v1;
 
 option go_package = "github.com/terminatewithextremeprejudice/enron-processor/gen/enron/v1;enronv1";
-
-// DbWorker is implemented by the `worker` service (Postgres sink).
-// The `parser` service calls WriteMessage synchronously and only commits the
-// Kafka offset after a successful ack — at-least-once delivery, made
-// effectively-once by the idempotency key in the database.
-service DbWorker {
-  // Write one parsed message + its recipients. Idempotent in idempotency_key.
-  rpc WriteMessage (ParsedMessage) returns (WriteResult);
-
-  // Liveness/readiness probe.
-  rpc Health (HealthCheck) returns (HealthStatus);
-}
 
 // ParsedMessage is the normalized result of parsing one raw Enron mail file.
 message ParsedMessage {
@@ -47,25 +38,4 @@ message ParsedMessage {
 message Recipient {
   string name = 1;
   string email = 2;
-}
-
-message WriteResult {
-  string idempotency_key = 1;
-
-  // true when this key had already been committed by an earlier attempt.
-  bool duplicate = 2;
-
-  int32 recipients_written = 3;
-  int64 message_row_id = 4;
-  // 1 = person row created, 0 = person already existed.
-  int32 person_created = 5;
-}
-
-message HealthCheck {
-  string service = 1;
-}
-
-message HealthStatus {
-  bool ok = 1;
-  string detail = 2;
 }
