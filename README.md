@@ -1,10 +1,10 @@
 # enron-processor
 
-Cloud-native Go microservices that ingest the **Enron Email 2015** dataset
+Go microservices that ingest the **Enron Email 2015** dataset
 (~500k mails across 151 maildirs) through **Kafka 4.0 (KRaft)**, persist
 parsed messages into **PostgreSQL**, and expose metrics over HTTP.
 
-Kafka client: **sarama**. All cross-service payloads are **protobuf**.
+Kafka client: **sarama**. Cross-service payloads are **protobuf**.
 Failures land on a **dead-letter topic**, and the whole pipeline is
 **idempotent** — redelivery and replay are safe by construction.
 
@@ -21,21 +21,21 @@ Failures land on a **dead-letter topic**, and the whole pipeline is
 ## Architecture
 
 ```
-                         +--------+
- POST /start ------------> API    |-------------------------------+
- GET /status <------------| :8080 |                               v
- GET /top-senders <-------+        |                        PostgreSQL
-                              +----+------------------- (person, message,
-                              |                              message_recipient,
-                              v                              envelope_receipt)
-+-----------+ RawEnvelope  +---v------------------+   ParsedMessage    +---------+
-| producer  |---enron.raw-->| parser               |------------------->| worker  |
-| maildir ->| (proto bytes) | RFC-822 -> proto     |   gRPC DbWorker    | Postgres|
-+-----------+               +----------+-----------+   WriteMessage     +---------+
-      |                          |  ^
-      | produce/parse/write fail |  | DLQ replay (manual)
-      v                          |  |
-        enron.raw.dlq  <---------+--+   (DeadLetter proto: original envelope + error)
+                       +--------+
+ POST /start ---------->| API    |-------------------------------+
+ GET /status <-----------> :8080 |                               v
+ GET /top-senders <------+        |                         PostgreSQL
+                         +--------+                  (person, message,
+                               ^                              message_recipient,
+                               |                              envelope_receipt)
++-----------+ RawEnvelope  +---v------------------+
+| producer  |---enron.raw-->| parser               |--- one Postgres tx per
+| maildir ->| (proto bytes) | RFC-822 -> ParsedMessage |    message (idempotent)
++-----------+               +----------+-----------+
+                                   |  ^
+          produce/parse/write fail |  | DLQ replay (manual)
+                                   v  |   (DeadLetter proto: original envelope + error)
+                                 enron.raw.dlq
 ```
 
 Data flow:
@@ -43,13 +43,15 @@ Data flow:
    (`RawEnvelope`) onto `enron.raw`. Nothing is parsed here — the producer
    is a safe, dumb ferry.
 2. **parser** consumes `enron.raw`, parses RFC-822 mail into a
-   `ParsedMessage`, and calls the worker **synchronously over gRPC**.
-3. **worker** (the "second worker", no Kafka on this leg by design) upserts
-   the person + message + recipient rows into PostgreSQL.
-4. Kafka offsets are committed only after the worker acks → **at-least-once**.
-5. The worker's writes are **idempotent** (unique `idempotency_key`) →
-   effective-once results in the database.
-6. Anything unparseable (or whose write failed) is routed to `enron.raw.dlq`
+   `ParsedMessage`, and writes it **directly into PostgreSQL** in a single
+   transaction: upsert the sender `person`, insert the `message`
+   (`ON CONFLICT (idempotency_key) DO NOTHING`), upsert each recipient
+   `person` + `message_recipient` bridge row, and stamp the raw-stage
+   `envelope_receipt`. Message bodies are stored as `''` for now.
+3. Kafka offsets are committed only after the Postgres commit → **at-least-once**.
+4. The parser's writes are **idempotent** (unique `idempotency_key`,
+   conflict-does-nothing upserts) → effective-once results in the database.
+5. Anything unparseable (or whose write failed) is routed to `enron.raw.dlq`
    wrapped in a `DeadLetter` carrying the original envelope + error —
    lossless, inspectable, replayable.
 
@@ -61,7 +63,7 @@ producer restarts, re-runs, and DLQ replays. It travels verbatim from
 
 | Stage      | Mechanism                                                                 |
 |------------|---------------------------------------------------------------------------|
-| Raw (Kafka) | `envelope_receipt` table: envelope keys seen on the wire, first/last sighting |
+| Raw (Kafka) | `envelope_receipt` table: envelope keys seen on the wire, first/last sighting (stamped by the parser) |
 | Parsed (DB) | `message.idempotency_key UNIQUE` + `ON CONFLICT DO NOTHING` semantics    |
 | Producer   | `acks: all` + explicit retries (sarama)                                   |
 
@@ -80,10 +82,10 @@ producer restarts, re-runs, and DLQ replays. It travels verbatim from
 # Prereqs: docker + compose on this machine.
 
 make infra            # Kafka 4.0 (KRaft) + Postgres 16, schema auto-migrated
-make fetch-dataset    # download + unpack Enron into ./data (idempotent)
-make app              # build the 4 Go services + start everything (phase 2)
+make fetch-dataset    # download + unpack Enron into ./data (optional)
+make app              # build the 3 Go services + start everything
 
-# Host-side endpoints once phase 2 is in:
+# Host-side endpoints once the app profile is up:
 curl -X POST localhost:8080/start
 curl localhost:8080/status
 curl localhost:8080/top-senders
@@ -91,4 +93,3 @@ curl localhost:8080/top-senders
 
 Service endpoints (localhost): API `8080`, Postgres `5432`, Kafka EXTERNAL
 listener `9093` (in-network services use `kafka:9092` via the PLAINTEXT listener).
-
