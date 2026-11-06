@@ -42,8 +42,8 @@ func idempotencyKey(relSlashPath string) string {
 // Raw bytes are capped at cfg.MaxEnvelopeBytes if set; excess is truncated.
 // This allows the producer to be a ferry while handling unusually large files.
 func buildEnvelope(cfg Config, relSlashPath string, raw []byte, pid string, producedAt time.Time) *enronv1.RawEnvelope {
-	if cfg.MaxEnvelopeBytes > 0 && len(raw) > cfg.MaxEnvelopeBytes {
-		raw = raw[:cfg.MaxEnvelopeBytes]
+	if cfg.MaxEnvelopeBytes > 0 && int64(len(raw)) > cfg.MaxEnvelopeBytes {
+		raw = raw[:int(cfg.MaxEnvelopeBytes)]
 	}
 	return &enronv1.RawEnvelope{
 		IdempotencyKey: idempotencyKey(relSlashPath),
