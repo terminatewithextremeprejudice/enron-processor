@@ -21,39 +21,33 @@ Failures land on a **dead-letter topic**, and the whole pipeline is
 ## Architecture
 
 ```
-                       +--------+
- POST /start ---------->| API    |-------------------------------+
- GET /status <-----------> :8080 |                               v
- GET /top-senders <------+        |                         PostgreSQL
-                         +--------+                  (person, message,
-                               ^                              message_recipient,
-                               |                              envelope_receipt)
-+-----------+ RawEnvelope  +---v------------------+
-| producer  |---enron.raw-->| parser               |--- one Postgres tx per
-| maildir ->| (proto bytes) | RFC-822 -> ParsedMessage |    message (idempotent)
-+-----------+               +----------+-----------+
-                                   |  ^
-          produce/parse/write fail |  | DLQ replay (manual)
-                                   v  |   (DeadLetter proto: original envelope + error)
-                                 enron.raw.dlq
+                        +---------+
+ POST /start ---------->| API     |--- trigger walk ----->+-----------+
+ GET /status <----------+ :8080   |                      | producer  |
+ GET /top-senders <-----+         |       +------------->| maildir ->|--- RawEnvelope
+                        +---------+       |             | (proto)    |---+
+                                   ^      |             +-----------+   |
+                         query DB |      |                     |       |
+                                   |      |                   Raw       |
+                             +----v----   |             +---------------   v
+                            | PostgreSQL  |             | Kafka          |
+                            | (message,   |             | enron.raw------->|
+                            |  sender     |     +-------+------------------>
+                            |  recipient) |     |                   |       |
+                            +------------<-----<           |       |
+                                                           |       |
+                                                   +--------+---+   |
+                                                   | DLQ Replay  |<--+
+                                                   +--------------+
 ```
 
-Data flow:
-1. **producer** walks the maildir and emits the *unmodified raw bytes*
-   (`RawEnvelope`) onto `enron.raw`. Nothing is parsed here — the producer
-   is a safe, dumb ferry.
-2. **parser** consumes `enron.raw`, parses RFC-822 mail into a
-   `ParsedMessage`, and writes it **directly into PostgreSQL** in a single
-   transaction: upsert the sender `person`, insert the `message`
-   (`ON CONFLICT (idempotency_key) DO NOTHING`), upsert each recipient
-   `person` + `message_recipient` bridge row, and stamp the raw-stage
-   `envelope_receipt`. Message bodies are stored as `''` for now.
-3. Kafka offsets are committed only after the Postgres commit → **at-least-once**.
-4. The parser's writes are **idempotent** (unique `idempotency_key`,
-   conflict-does-nothing upserts) → effective-once results in the database.
-5. Anything unparseable (or whose write failed) is routed to `enron.raw.dlq`
-   wrapped in a `DeadLetter` carrying the original envelope + error —
-   lossless, inspectable, replayable.
+**Data flow:**
+
+1. **API** triggers producer via `POST /start`, queries DB for status/top-senders
+2. **Producer** walks maildir, emits `RawEnvelope` protos to `enron.raw` topic
+3. **Parser** (consumer group, xN instances) consumes `enron.raw`, parses RFC-822,
+   writes to PostgreSQL in an idempotent transaction
+4. **Dead-letter topic** (`enron.raw.dlq`) captures unparseable envelopes + errors
 
 ## Idempotency design
 
@@ -66,6 +60,21 @@ producer restarts, re-runs, and DLQ replays. It travels verbatim from
 | Raw (Kafka) | `envelope_receipt` table: envelope keys seen on the wire, first/last sighting (stamped by the parser) |
 | Parsed (DB) | `message.idempotency_key UNIQUE` + `ON CONFLICT DO NOTHING` semantics    |
 | Producer   | `acks: all` + explicit retries (sarama)                                   |
+
+## Multi-instance parser support
+
+The parser uses **Kafka consumer groups** to support running multiple instances
+in parallel. All instances with the same `consumer_group` name share partitions
+across the group via Kafka's built-in coordination:
+
+- **Partition assignment**: Kafka's Range strategy distributes consecutive
+  partitions to each consumer in the group
+- **Rebalance on join/leave**: When a parser instance starts or stops, Kafka
+  redistributes partitions among remaining members
+- **At-least-once delivery**: Offsets are only committed after successful
+  persistence (or DLQ routing), ensuring no message is dropped
+- **Idempotent writes**: Database constraints deduplicate messages if the same
+  envelope is processed multiple times during rebalances
 
 ## Schema (db/migrations/0001_init.up.sql)
 
