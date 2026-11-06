@@ -25,9 +25,9 @@ const (
 	defaultListenAddr = ":9000"
 	defaultDataDir    = "data"
 	// defaultMaxEnvelopeBytes is the hard size cap for any single envelope
-	// (~8MB). Files exceeding this are truncated at read time to protect
+	// (~1MB). Files exceeding this are truncated at read time to protect
 	// the broker from OOM and the consumer from slow processing.
-	defaultMaxEnvelopeBytes = 8 * 1024 * 1024
+	defaultMaxEnvelopeBytes = 1 * 1024 * 1024
 )
 
 // Sink selects the envelope destination. These are the accepted values of
