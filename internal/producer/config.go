@@ -22,12 +22,12 @@ import (
 )
 
 const (
-	// defaultListenAddr is the in-network control gRPC bind; the api
-	// service dials it (default producer_addr: producer:9000).
 	defaultListenAddr = ":9000"
-	// defaultDataDir mirrors the repo convention of `make fetch-dataset`
-	// (unpack into ./data) for local runs outside Compose.
-	defaultDataDir = "data"
+	defaultDataDir    = "data"
+	// defaultMaxEnvelopeBytes is the hard size cap for any single envelope
+	// (~8MB). Files exceeding this are truncated at read time to protect
+	// the broker from OOM and the consumer from slow processing.
+	defaultMaxEnvelopeBytes = 8 * 1024 * 1024
 )
 
 // Sink selects the envelope destination. These are the accepted values of
@@ -77,7 +77,7 @@ type Config struct {
 	Retries         int    `yaml:"retries"`
 	ReturnSuccesses bool   `yaml:"return_successes"`
 	MaxMessageBytes int    `yaml:"max_message_bytes"`
-	MaxEnvelopeBytes int   `yaml:"max_envelope_bytes"` // truncate raw bytes if exceeded
+	MaxEnvelopeBytes int64 `yaml:"max_envelope_bytes"` // truncate raw bytes if exceeded
 	BatchSize       int    `yaml:"batch_size"`
 	FlushMS         int    `yaml:"flush_ms"`
 }
@@ -122,6 +122,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Acks == "" {
 		cfg.Acks = "all"
+	}
+	if cfg.MaxEnvelopeBytes == 0 {
+		cfg.MaxEnvelopeBytes = defaultMaxEnvelopeBytes
 	}
 	return cfg, nil
 }
