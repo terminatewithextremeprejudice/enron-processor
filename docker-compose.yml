@@ -76,6 +76,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      # Allow up to 2MB messages (1MB limit for LimitReader + protobuf overhead)
+      KAFKA_MESSAGE_MAX_BYTES: "2097152"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
