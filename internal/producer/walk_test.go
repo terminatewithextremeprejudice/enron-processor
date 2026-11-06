@@ -20,6 +20,13 @@ func quietLog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func testConfig() Config {
+	cfg := Config{}
+	cfg.Sink = SinkDummy
+	cfg.MaxEnvelopeBytes = 64 * 1024 * 1024 // 64MB limit for tests
+	return cfg
+}
+
 func TestIdempotencyKeyIsDeterministicSHA256(t *testing.T) {
 	const path = "1/all/100"
 	key := idempotencyKey(path)
@@ -37,8 +44,9 @@ func TestIdempotencyKeyIsDeterministicSHA256(t *testing.T) {
 }
 
 func TestBuildEnvelopeCarriesAllFields(t *testing.T) {
+	cfg := testConfig()
 	raw := []byte("From: a@b\nSubject: hi\n\nbody")
-	env := buildEnvelope("1/all/100", raw, "host/42", time.Now())
+	env := buildEnvelope(cfg, "1/all/100", raw, "host/42", time.Now())
 
 	if env.IdempotencyKey == "" {
 		t.Fatal("missing idempotency key")
@@ -58,6 +66,7 @@ func TestBuildEnvelopeCarriesAllFields(t *testing.T) {
 }
 
 func TestWalkEmitsOneEnvelopePerRegularFile(t *testing.T) {
+	cfg := testConfig()
 	root := t.TempDir()
 	writeMail := func(rel, body string) {
 		full := filepath.Join(root, filepath.FromSlash(rel))
@@ -90,7 +99,7 @@ func TestWalkEmitsOneEnvelopePerRegularFile(t *testing.T) {
 		return nil
 	}
 
-	stats, err := Walk(context.Background(), root, emit, "test/1", quietLog())
+	stats, err := Walk(context.Background(), cfg, root, emit, "test/1", quietLog())
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}
@@ -122,6 +131,7 @@ func TestWalkEmitsOneEnvelopePerRegularFile(t *testing.T) {
 }
 
 func TestWalkCountsEmitFailuresAndKeepsGoing(t *testing.T) {
+	cfg := testConfig()
 	root := t.TempDir()
 	for _, rel := range []string{"1/all/1", "1/all/2", "1/all/3"} {
 		full := filepath.Join(root, filepath.FromSlash(rel))
@@ -140,7 +150,7 @@ func TestWalkCountsEmitFailuresAndKeepsGoing(t *testing.T) {
 		return nil
 	}
 	wantFailed := int64(1)
-	stats, err := Walk(context.Background(), root, emit, "test/1", quietLog())
+	stats, err := Walk(context.Background(), cfg, root, emit, "test/1", quietLog())
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}
@@ -150,6 +160,7 @@ func TestWalkCountsEmitFailuresAndKeepsGoing(t *testing.T) {
 }
 
 func TestWalkAbortsOnCancellation(t *testing.T) {
+	cfg := testConfig()
 	root := t.TempDir()
 	full := filepath.Join(root, "1/all/1")
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -161,7 +172,7 @@ func TestWalkAbortsOnCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled
-	if _, err := Walk(ctx, root, func(context.Context, *enronv1.RawEnvelope) error { return nil }, "test/1", quietLog()); err == nil {
+	if _, err := Walk(ctx, cfg, root, func(context.Context, *enronv1.RawEnvelope) error { return nil }, "test/1", quietLog()); err == nil {
 		t.Fatal("Walk should fail on a cancelled context")
 	}
 }
