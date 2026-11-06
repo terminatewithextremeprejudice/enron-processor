@@ -131,28 +131,38 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 
 // handleStatus: GET /status — finished? + total messages processed.
 //
-// Two sources of truth, both required: the producer says whether the walk
-// is done, Postgres says how many messages it has made durable. Either one
-// unreachable means the answer would be a guess → 503, with the reason.
+// Three sources of truth:
+//   - producer says whether the walk is done
+//   - Postgres says how many messages are durably parsed
+//   - Postgres says how many failed to parse (dead_letter table)
+//
+// finished is true when producer walk is complete AND
+// (total_messages + dead_letters == emitted_envelopes).
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+        ctx := r.Context()
 
-	reply, err := s.prod.Status(ctx)
-	if err != nil {
-		s.log.Error("producer status failed", "err", err)
-		s.fault(w, "producer status unavailable: "+err.Error())
-		return
-	}
-	total, err := s.store.TotalMessages(ctx)
-	if err != nil {
-		s.log.Error("total messages failed", "err", err)
-		s.fault(w, "message count unavailable: "+err.Error())
-		return
-	}
-	s.json(w, http.StatusOK, statusResponse{
-		Finished:      reply.GetState() == enronv1.ProducerState_PRODUCER_STATE_FINISHED && total == reply.GetEmitted() - reply.GetDlq(),
-		TotalMessages: total,
-	})
+        reply, err := s.prod.Status(ctx)
+        if err != nil {
+                s.log.Error("producer status failed", "err", err)
+                s.fault(w, "producer status unavailable: "+err.Error())
+                return
+        }
+        total, err := s.store.TotalMessages(ctx)
+        if err != nil {
+                s.log.Error("total messages failed", "err", err)
+                s.fault(w, "message count unavailable: "+err.Error())
+                return
+        }
+        deadLetters, err := s.store.TotalDeadLetters(ctx)
+        if err != nil {
+                s.log.Error("total dead letters failed", "err", err)
+                s.fault(w, "dead letter count unavailable: "+err.Error())
+                return
+        }
+        s.json(w, http.StatusOK, statusResponse{
+                Finished: reply.GetState() == enronv1.ProducerState_PRODUCER_STATE_FINISHED && (total+deadLetters) == reply.GetEmitted(),
+                TotalMessages: total,
+        })
 }
 
 // handleTopSenders: GET /top-senders — top N senders by message count.

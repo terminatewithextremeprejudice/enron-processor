@@ -134,16 +134,20 @@ func (s *Server) handleMessage(ctx context.Context, msg *sarama.ConsumerMessage,
 
 	pm, perr := parseMail(env)
 	if perr != nil {
+		// Record in dead_letter table for status reporting
+		_ = s.persister.DeadLetter(ctx, env, perr.Error())
+		
 		if werr := s.dlq.send(ctx, s.dlqOf(env, msg, "parser:parse", perr)); werr != nil {
-
 			return fmt.Errorf("route failed-envelope %q to dlq: %w", env.SourcePath, werr)
-
 		}
 		s.log.Warn("parse failed → DLQ", "source_path", env.SourcePath, "err", perr)
 		return nil
 	}
 
 	if perr2 := s.persister.Persist(ctx, pm); perr2 != nil {
+		// Record in dead_letter table for status reporting
+		_ = s.persister.DeadLetter(ctx, env, perr2.Error())
+		
 		if werr := s.dlq.send(ctx, s.dlqOf(env, msg, "parser:persist", perr2)); werr != nil {
 			return fmt.Errorf("route persist-failed %q to dlq: %w", env.SourcePath, werr)
 		}

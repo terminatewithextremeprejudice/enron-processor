@@ -30,6 +30,19 @@ type pgPersister struct {
 	topic string
 }
 
+// DeadLetter records an envelope that failed to parse.
+// Insert is idempotent via ON CONFLICT DO NOTHING.
+func (p *pgPersister) DeadLetter(ctx context.Context, env *enronv1.RawEnvelope, errStr string) error {
+	if _, err := p.db.ExecContext(ctx, insertDeadLetterSQL,
+		env.GetIdempotencyKey(),
+		env.GetSourcePath(),
+		errStr,
+	); err != nil {
+		return fmt.Errorf("dead letter: %w", err)
+	}
+	return nil
+}
+
 // newPostgresPersister opens the pool and verifies reachability with a
 // bounded ping — sql.Open is lazy, so without the ping a bad DSN would fail
 // on the first message instead of at boot.
@@ -242,3 +255,8 @@ VALUES ($1, $2, $3, 'parser')
 ON CONFLICT (envelope_key) DO UPDATE
 SET last_seen = now(),
     last_component = EXCLUDED.last_component`
+
+const insertDeadLetterSQL = `
+INSERT INTO dead_letter (idempotency_key, source_path, error)
+VALUES ($1, $2, $3)
+ON CONFLICT (idempotency_key) DO NOTHING`

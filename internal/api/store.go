@@ -19,16 +19,17 @@ type Sender struct {
 // to Postgres — writes belong to the parser (the sole writer); this is
 // strictly a metrics projection over the schema it shares.
 type Store interface {
-	// TotalMessages is the count of durably parsed messages
-	// (rows in the message table — the pipeline's effective-once sink).
-	TotalMessages(ctx context.Context) (int64, error)
-
-	// TopSenders returns the n most prolific senders by parsed-message
-	// count, ties broken by email for a deterministic order.
-	TopSenders(ctx context.Context, n int) ([]Sender, error)
-
-	Ping(ctx context.Context) error
-	Close() error
+        // TotalMessages is the count of durably parsed messages
+        // (rows in the message table — the pipeline's effective-once sink).
+        TotalMessages(ctx context.Context) (int64, error)
+        // TotalDeadLetters is the count of messages that failed to parse/persist
+        // (rows in the dead_letter table).
+        TotalDeadLetters(ctx context.Context) (int64, error)
+        // TopSenders returns the n most prolific senders by parsed-message
+        // count, ties broken by email for a deterministic order.
+        TopSenders(ctx context.Context, n int) ([]Sender, error)
+        Ping(ctx context.Context) error
+        Close() error
 }
 
 type pgStore struct {
@@ -75,11 +76,21 @@ SELECT p.email, count(m.id) AS messages
  LIMIT $1`
 
 func (s *pgStore) TotalMessages(ctx context.Context) (int64, error) {
-	var n int64
-	if err := s.db.QueryRowContext(ctx, totalMessagesQuery).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count messages: %w", err)
-	}
-	return n, nil
+        var n int64
+        if err := s.db.QueryRowContext(ctx, totalMessagesQuery).Scan(&n); err != nil {
+                return 0, fmt.Errorf("count messages: %w", err)
+        }
+        return n, nil
+}
+
+const totalDeadLettersQuery = `SELECT count(*) FROM dead_letter`
+
+func (s *pgStore) TotalDeadLetters(ctx context.Context) (int64, error) {
+        var n int64
+        if err := s.db.QueryRowContext(ctx, totalDeadLettersQuery).Scan(&n); err != nil {
+                return 0, fmt.Errorf("count dead letters: %w", err)
+        }
+        return n, nil
 }
 
 func (s *pgStore) TopSenders(ctx context.Context, n int) ([]Sender, error) {

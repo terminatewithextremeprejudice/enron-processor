@@ -25,6 +25,8 @@ import (
 type Persister interface {
 	// Persist durably records one parsed message (idempotent by key).
 	Persist(ctx context.Context, msg *enronv1.ParsedMessage) error
+	// DeadLetter records an envelope that failed to parse (idempotent by key).
+	DeadLetter(ctx context.Context, env *enronv1.RawEnvelope, errStr string) error
 	// Close releases the Persister's resources.
 	Close() error
 }
@@ -61,6 +63,16 @@ func (d *dummyPersister) Persist(ctx context.Context, msg *enronv1.ParsedMessage
 	}
 	d.log.Debug("persisted (dummy sink)", "idempotency_key", msg.GetIdempotencyKey(),
 		"sender", msg.GetSenderEmail(), "subject", msg.GetSubject())
+	return nil
+}
+
+func (d *dummyPersister) DeadLetter(ctx context.Context, env *enronv1.RawEnvelope, errStr string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	d.log.Debug("dead letter (dummy sink)", "idempotency_key", env.GetIdempotencyKey(), "err", errStr)
 	return nil
 }
 
