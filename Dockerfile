@@ -7,7 +7,7 @@
 #   docker build --build-arg SERVICE=parser   -t enron-processor/parser   .
 #   docker build --build-arg SERVICE=api      -t enron-processor/api      .
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 
 # ---- [1/3] protobuf code generation ------------------------------------
 # Generated inside the image build so the pipeline never depends on the
