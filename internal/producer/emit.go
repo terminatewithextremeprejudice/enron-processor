@@ -135,7 +135,10 @@ func newKafkaSink(cfg Config, log *slog.Logger) (*kafkaSink, error) {
 	return &kafkaSink{topic: cfg.RawTopic, sp: sp}, nil
 }
 
-// Send marshals the envelope and writes it to the raw topic synchronously.
+// send marshals the envelope and writes it to the raw topic synchronously.
+// Uses the maildir (first path component) as the partition key to ensure
+// all messages from the same folder go to the same partition, improving
+// cache locality and reducing rebalance churn in the consumer group.
 func (k *kafkaSink) Send(ctx context.Context, env *enronv1.RawEnvelope) error {
 	select {
 	case <-ctx.Done():
@@ -146,9 +149,11 @@ func (k *kafkaSink) Send(ctx context.Context, env *enronv1.RawEnvelope) error {
 	if err != nil {
 		return fmt.Errorf("marshal envelope %q: %w", env.SourcePath, err)
 	}
+	// Extract maildir from source path (first component) for partition key
+	partitionKey := extractMaildir(env.SourcePath)
 	msg := &sarama.ProducerMessage{
 		Topic: k.topic,
-		Key:   sarama.StringEncoder(env.IdempotencyKey),
+		Key:   sarama.StringEncoder(partitionKey),
 		Value: sarama.ByteEncoder(body),
 	}
 	partition, offset, err := k.sp.SendMessage(msg)
@@ -160,6 +165,17 @@ func (k *kafkaSink) Send(ctx context.Context, env *enronv1.RawEnvelope) error {
 	_ = partition
 	_ = offset
 	return nil
+}
+
+// extractMaildir returns the first path component (the maildir name)
+// from a slash-separated relative path like "mannk_01/20010107.eml"
+func extractMaildir(relPath string) string {
+	for i := 0; i < len(relPath); i++ {
+		if relPath[i] == '/' {
+			return relPath[:i]
+		}
+	}
+	return relPath // no slash found, return whole path
 }
 
 func (k *kafkaSink) Close() error { return k.sp.Close() }
