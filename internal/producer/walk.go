@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -97,7 +98,18 @@ func Walk(ctx context.Context, cfg Config, root string, emit EmitFunc, pid strin
 		}
 		relSlash := filepath.ToSlash(rel)
 
-		raw, readErr := os.ReadFile(path)
+		// Open the file and limit read to config's MaxEnvelopeBytes
+		f, err := os.Open(path)
+		if err != nil {
+			failed.Add(1)
+			log.Error("read mail file", "path", relSlash, "err", err)
+			return nil
+		}
+		// Use LimitReader to cap the read at MaxEnvelopeBytes
+		var limited io.Reader = io.LimitReader(f, cfg.MaxEnvelopeBytes)
+		// Read at least header bytes if file is smaller, or exactly the limit
+		raw, readErr := io.ReadAll(limited)
+		f.Close()
 		if readErr != nil {
 			failed.Add(1)
 			log.Error("read mail file", "path", relSlash, "err", readErr)
