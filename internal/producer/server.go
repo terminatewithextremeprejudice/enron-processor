@@ -133,7 +133,7 @@ func (s *Server) runWalk(token uint64) {
 		return
 	}
 
-	stats, err := Walk(s.ctx, root, s.emit, producerID(), s.log)
+		stats, err := Walk(s.ctx, s.cfg, root, s.emit, producerID(), s.log)
 	if err != nil {
 		s.log.Error("walk aborted",
 			"err", err,

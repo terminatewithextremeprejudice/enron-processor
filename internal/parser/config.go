@@ -44,6 +44,7 @@ type Config struct {
 	DBDSN          string `yaml:"db_dsn"`    // Postgres DSN (or DB_DSN env)
 	Acks           string `yaml:"acks"`      // DLQ producer acks (all|leader)
 	Retries        int    `yaml:"retries"`
+	ReturnSuccesses bool   `yaml:"return_successes"`
 	MaxMessageBytes int   `yaml:"max_message_bytes"`
 }
 

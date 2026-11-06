@@ -27,6 +27,7 @@ func newDLQProducer(cfg Config, log *slog.Logger) (*dlqProducer, error) {
 	sc := sarama.NewConfig()
 	sc.ClientID = "enron-parser-dlq"
 	sc.Producer.RequiredAcks = acksFor(cfg.Acks)
+	sc.Producer.Return.Successes = cfg.ReturnSuccesses
 	sc.Producer.Retry.Max = cfg.Retries
 	if cfg.MaxMessageBytes > 0 {
 		sc.Producer.MaxMessageBytes = cfg.MaxMessageBytes

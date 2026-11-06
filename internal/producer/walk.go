@@ -38,9 +38,12 @@ func idempotencyKey(relSlashPath string) string {
 }
 
 // buildEnvelope assembles the Kafka transport message for one mail file.
-// The raw bytes are carried unmodified: this component is a ferry, the
-// parser owns every byte of interpretation.
-func buildEnvelope(relSlashPath string, raw []byte, pid string, producedAt time.Time) *enronv1.RawEnvelope {
+// Raw bytes are capped at cfg.MaxEnvelopeBytes if set; excess is truncated.
+// This allows the producer to be a ferry while handling unusually large files.
+func buildEnvelope(cfg Config, relSlashPath string, raw []byte, pid string, producedAt time.Time) *enronv1.RawEnvelope {
+	if cfg.MaxEnvelopeBytes > 0 && len(raw) > cfg.MaxEnvelopeBytes {
+		raw = raw[:cfg.MaxEnvelopeBytes]
+	}
 	return &enronv1.RawEnvelope{
 		IdempotencyKey: idempotencyKey(relSlashPath),
 		SourcePath:     relSlashPath,
@@ -63,7 +66,7 @@ func buildEnvelope(relSlashPath string, raw []byte, pid string, producedAt time.
 // walked around — one bad file must not sink the rest of the tree. A walk
 // returns partial stats plus an error only when cancelled or when the
 // walker itself dies.
-func Walk(ctx context.Context, root string, emit EmitFunc, pid string, log *slog.Logger) (WalkStats, error) {
+func Walk(ctx context.Context, cfg Config, root string, emit EmitFunc, pid string, log *slog.Logger) (WalkStats, error) {
 	var total, emitted, failed atomic.Int64
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, entryErr error) error {
@@ -101,7 +104,7 @@ func Walk(ctx context.Context, root string, emit EmitFunc, pid string, log *slog
 			return nil
 		}
 
-		if err := emit(ctx, buildEnvelope(relSlash, raw, pid, time.Now())); err != nil {
+			if err := emit(ctx, buildEnvelope(cfg, relSlash, raw, pid, time.Now())); err != nil {
 			failed.Add(1)
 			log.Error("emit envelope", "path", relSlash, "err", err)
 			return nil

@@ -82,7 +82,6 @@ producer restarts, re-runs, and DLQ replays. It travels verbatim from
 # Prereqs: docker + compose on this machine.
 
 make infra            # Kafka 4.0 (KRaft) + Postgres 16, schema auto-migrated
-make fetch-dataset    # download + unpack Enron into ./data (optional)
 make app              # build the 3 Go services + start everything
 
 # Host-side endpoints once the app profile is up:

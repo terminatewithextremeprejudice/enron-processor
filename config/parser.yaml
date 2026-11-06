@@ -17,3 +17,4 @@ db_dsn: postgres://enron:***@postgres:5432/enron?sslmode=disable
 
 acks: all
 retries: 5
+return_successes: true

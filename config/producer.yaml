@@ -23,6 +23,8 @@ dlq_topic: enron.raw.dlq
 
 acks: all
 retries: 3
+return_successes: true
+max_envelope_bytes: 8388608  # 8MB - truncate oversized messages
 # 10 MiB — Enron mails with embedded payloads can be large.
 max_message_bytes: 10485760
 batch_size: 131072

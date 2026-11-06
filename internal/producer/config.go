@@ -75,7 +75,9 @@ type Config struct {
 	Producers       int    `yaml:"producers"`
 	Acks            string `yaml:"acks"`
 	Retries         int    `yaml:"retries"`
+	ReturnSuccesses bool   `yaml:"return_successes"`
 	MaxMessageBytes int    `yaml:"max_message_bytes"`
+	MaxEnvelopeBytes int   `yaml:"max_envelope_bytes"` // truncate raw bytes if exceeded
 	BatchSize       int    `yaml:"batch_size"`
 	FlushMS         int    `yaml:"flush_ms"`
 }

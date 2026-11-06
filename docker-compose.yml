@@ -99,8 +99,9 @@ services:
       dockerfile: Dockerfile
       args:
         SERVICE: producer
+    tmpfs:
+      - /data:rw,noatime
     volumes:
-      - dataset:/data
       - ./config/producer.yaml:/etc/enron/config.yaml:ro
 
   parser:

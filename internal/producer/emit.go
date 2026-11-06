@@ -117,6 +117,7 @@ func newKafkaSink(cfg Config, log *slog.Logger) (*kafkaSink, error) {
 	sc := sarama.NewConfig()
 	sc.ClientID = "enron-producer"
 	sc.Producer.RequiredAcks = acksFor(cfg.Acks)
+	sc.Producer.Return.Successes = cfg.ReturnSuccesses
 	sc.Producer.Retry.Max = cfg.Retries
 	if cfg.MaxMessageBytes > 0 {
 		sc.Producer.MaxMessageBytes = cfg.MaxMessageBytes
