@@ -106,7 +106,31 @@ services:
     volumes:
       - ./config/producer.yaml:/etc/enron/config.yaml:ro
 
-  parser:
+  parser1:
+    <<: *go-service
+    image: enron-processor/parser
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: parser
+    volumes:
+      - ./config/parser.yaml:/etc/enron/config.yaml:ro
+
+  parser2:
+    <<: *go-service
+    image: enron-processor/parser
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: parser
+    volumes:
+      - ./config/parser.yaml:/etc/enron/config.yaml:ro
+
+  parser3:
     <<: *go-service
     image: enron-processor/parser
     profiles: [app]

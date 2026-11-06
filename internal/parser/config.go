@@ -39,13 +39,18 @@ type Config struct {
 	ConsumerGroup    string   `yaml:"consumer_group"`
 	MaxPollRecords   int      `yaml:"max_poll_records"` // advisory (sarama has no exact knob; used for pacing)
 
+	// Consumer group settings for multi-instance deployments
+	SessionTimeoutMs  int `yaml:"session_timeout_ms"`  // Group session timeout (default 45000)
+	HeartbeatInterval int `yaml:"heartbeat_interval_ms"` // Heartbeat interval (default 3000)
+	RebalanceTimeoutMs int `yaml:"rebalance_timeout_ms"` // Rebalance timeout (default 60000)
+
 	// ---- persistence target (direct Postgres writes) ------------------------
-	Persister      string `yaml:"persister"` // "postgres" | "dummy"
-	DBDSN          string `yaml:"db_dsn"`    // Postgres DSN (or DB_DSN env)
-	Acks           string `yaml:"acks"`      // DLQ producer acks (all|leader)
-	Retries        int    `yaml:"retries"`
+	Persister       string `yaml:"persister"` // "postgres" | "dummy"
+	DBDSN           string `yaml:"db_dsn"`    // Postgres DSN (or DB_DSN env)
+	Acks            string `yaml:"acks"`      // DLQ producer acks (all|leader)
+	Retries         int    `yaml:"retries"`
 	ReturnSuccesses bool   `yaml:"return_successes"`
-	MaxMessageBytes int   `yaml:"max_message_bytes"`
+	MaxMessageBytes int    `yaml:"max_message_bytes"`
 }
 
 func Load(path string) (Config, error) {

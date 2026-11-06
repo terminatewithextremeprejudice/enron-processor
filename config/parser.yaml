@@ -11,6 +11,12 @@ dlq_topic: enron.raw.dlq
 consumer_group: parser
 max_poll_records: 200
 
+# Consumer group settings for multi-instance deployments
+# Multiple parser instances can share the same consumer_group name
+session_timeout_ms: 45000       # Group session timeout (45s)
+heartbeat_interval_ms: 3000     # Heartbeat interval (3s - must be < session_timeout)
+rebalance_timeout_ms: 60000     # Partition reassignment timeout (60s)
+
 # Direct Postgres writes — there is no intermediate worker service.
 persister: postgres
 db_dsn: postgres://enron:***@postgres:5432/enron?sslmode=disable

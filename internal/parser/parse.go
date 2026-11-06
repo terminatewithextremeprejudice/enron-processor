@@ -27,6 +27,13 @@ func parseMail(env *enronv1.RawEnvelope) (*enronv1.ParsedMessage, error) {
 		return nil, errors.New("parser: empty payload")
 	}
 
+	// Skip iCalendar format (VBEGIN/VCALENDAR) - these are calendar events,
+	// not emails. The dataset includes calendar attachments that look like
+	// raw calendar data, not RFC-2822 messages.
+	if bytes.Contains(bytes.ToUpper(env.RawBytes), []byte("BEGIN:VCALENDAR")) {
+		return nil, fmt.Errorf("parser: VCALENDAR format (not an email)")
+	}
+
 	msg, err := mail.ReadMessage(bytes.NewReader(env.RawBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read message: %w", err)

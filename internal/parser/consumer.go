@@ -2,10 +2,12 @@ package parser
 
 import (
 	"context"
-	"time"
-	"sync"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/IBM/sarama"
 	enronv1 "github.com/terminatewithextremeprejudice/enron-processor/gen/enron/v1"
@@ -36,7 +38,7 @@ func New(cfg Config, log *slog.Logger, persister Persister) (*Server, error) {
 		return nil, fmt.Errorf("bootstrap_servers is required")
 	}
 
-	sc := newConsumerConfig()
+	sc := newConsumerConfig(cfg)
 
 	group, err := sarama.NewConsumerGroup(cfg.BootstrapServers, cfg.ConsumerGroup, sc)
 	if err != nil {
@@ -60,9 +62,46 @@ func New(cfg Config, log *slog.Logger, persister Persister) (*Server, error) {
 }
 
 // newConsumerConfig builds the sarama config for the consume leg.
-func newConsumerConfig() *sarama.Config {
+// Configures consumer group semantics: session timeouts, rebalance behavior,
+// and offset management for multiple parser instances to share partitions.
+func newConsumerConfig(cfg Config) *sarama.Config {
 	sc := sarama.NewConfig()
 	sc.Consumer.Return.Errors = false // errors flow through the message path; per-message failures we own
+
+	// Generate a unique client ID for this parser instance using random bytes
+	// This ensures distinct group membership across multiple container instances
+	// (os.Getpid() returns 1 for all Docker containers, causing membership conflicts)
+	b := make([]byte, 8)
+	rand.Read(b)
+	sc.ClientID = fmt.Sprintf("parser-%s", hex.EncodeToString(b))
+
+	// Consumer group settings for multi-instance deployment
+	// Use configured values or sensible defaults
+	if cfg.SessionTimeoutMs > 0 {
+		sc.Consumer.Group.Session.Timeout = time.Duration(cfg.SessionTimeoutMs) * time.Millisecond
+	} else {
+		sc.Consumer.Group.Session.Timeout = 45 * time.Second
+	}
+
+	if cfg.HeartbeatInterval > 0 {
+		sc.Consumer.Group.Heartbeat.Interval = time.Duration(cfg.HeartbeatInterval) * time.Millisecond
+	} else {
+		sc.Consumer.Group.Heartbeat.Interval = 3 * time.Second
+	}
+
+	if cfg.RebalanceTimeoutMs > 0 {
+		sc.Consumer.Group.Rebalance.Timeout = time.Duration(cfg.RebalanceTimeoutMs) * time.Millisecond
+	} else {
+		sc.Consumer.Group.Rebalance.Timeout = 60 * time.Second
+	}
+
+	// Auto-commit offsets every 10 seconds - ensures progress is synced to broker
+	sc.Consumer.Offsets.AutoCommit.Enable = true
+	sc.Consumer.Offsets.AutoCommit.Interval = 10 * time.Second
+
+	// Initial offset position: start from earliest (beginning) for backfill/replay
+	sc.Consumer.Offsets.Initial = sarama.OffsetOldest
+
 	return sc
 }
 
@@ -74,16 +113,24 @@ func newConsumerConfig() *sarama.Config {
 // even dead-letter (the DLQ write itself failed) is not marked → it is
 // redelivered, which is exactly the at-least-once contract the README calls
 // for.
+//
+// Consumer group sessions end on rebalances - we must rejoin continuously.
 func (s *Server) Run(ctx context.Context) error {
-	errc := make(chan error, 1)
-	go func() { errc <- s.group.Consume(ctx, []string{s.cfg.RawTopic}, s) }()
+	for {
+		select {
+		case <-ctx.Done():
+			s.log.Info("context cancelled, stopping consumer")
+			return ctx.Err()
+		default:
+		}
 
-	select {
-	case <-ctx.Done():
-		// Let Consume wind down; the caller (main) calls Close after Run returns.
-		return nil
-	case err := <-errc:
-		return err
+		s.log.Info("joining consumer group", "group", s.cfg.ConsumerGroup, "topic", s.cfg.RawTopic)
+		if err := s.group.Consume(ctx, []string{s.cfg.RawTopic}, s); err != nil {
+			s.log.Error("consumer", "err", err)
+			return err
+		}
+		// Consume returns on session close/rebalance - loop to rejoin
+		s.log.Info("consumer session ended, will rejoin on next iteration")
 	}
 }
 
