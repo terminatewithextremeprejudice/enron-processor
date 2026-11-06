@@ -12,7 +12,6 @@ import (
 // Sender is one row of the /top-senders response.
 type Sender struct {
 	Email        string `json:"email"`
-	Name         string `json:"name"`
 	MessageCount int64  `json:"message_count"`
 }
 
@@ -68,10 +67,10 @@ const totalMessagesQuery = `SELECT count(*) FROM message`
 // sender. Ties on count are broken by email ascending → the response is
 // stable across calls, which matters for scripts diffing /top-senders.
 const topSendersQuery = `
-SELECT p.email, p.name, count(m.id) AS messages
+SELECT p.email, count(m.id) AS messages
   FROM message AS m
   JOIN person  AS p ON p.id = m.sender_id
- GROUP BY p.id
+ GROUP BY p.id, p.email
  ORDER BY messages DESC, p.email ASC
  LIMIT $1`
 
@@ -96,7 +95,7 @@ func (s *pgStore) TopSenders(ctx context.Context, n int) ([]Sender, error) {
 	senders := make([]Sender, 0, n)
 	for rows.Next() {
 		var s Sender
-		if err := rows.Scan(&s.Email, &s.Name, &s.MessageCount); err != nil {
+		if err := rows.Scan(&s.Email, &s.MessageCount); err != nil {
 			return nil, fmt.Errorf("scan top senders: %w", err)
 		}
 		senders = append(senders, s)

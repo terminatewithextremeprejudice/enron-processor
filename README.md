@@ -92,3 +92,30 @@ curl localhost:8080/top-senders
 
 Service endpoints (localhost): API `8080`, Postgres `5432`, Kafka EXTERNAL
 listener `9093` (in-network services use `kafka:9092` via the PLAINTEXT listener).
+
+## Results 
+
+### /status
+```
+{
+  "finished": true,
+  "total_messages": 517374
+}
+```
+
+### /top-senders
+```
+| Rank | Email                         | Messages |
+|------|-------------------------------|----------|
+| 1    | kay.mann@enron.com            | 16,735   |
+| 2    | vince.kaminski@enron.com      | 14,368   |
+| 3    | jeff.dasovich@enron.com       | 11,411   |
+| 4    | pete.davis@enron.com          | 9,149    |
+| 5    | chris.germany@enron.com       | 8,801    |
+| 6    | sara.shackleton@enron.com     | 8,777    |
+| 7    | enron.announcements@enron.com | 8,587    |
+| 8    | tana.jones@enron.com          | 8,490    |
+| 9    | steven.kean@enron.com         | 6,759    |
+| 10   | kate.symes@enron.com          | 5,438    |
+
+```
